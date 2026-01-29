@@ -1,16 +1,16 @@
 export interface STTProvider {
   isAvailable(): boolean;
-  transcribe(pcm: Buffer): Promise<string>;
+  transcribe(wav: Buffer): Promise<string>;
 }
 
 export class STTService {
   constructor(private readonly providers: STTProvider[]) {}
 
-  async transcribe(pcm: Buffer): Promise<string> {
+  async transcribe(wav: Buffer): Promise<string> {
     for (const provider of this.providers) {
       if (!provider.isAvailable()) continue;
       try {
-        const text = await provider.transcribe(pcm);
+        const text = await provider.transcribe(wav);
         if (text.trim()) return text;
       } catch {
         continue;

@@ -41,7 +41,12 @@ const plugin = {
     },
   },
   register(api: ClawdbotPluginApi) {
-    const config = Value.Default(VoiceConfigSchema, api.pluginConfig ?? {}) as VoiceConfig;
+    const baseConfig = Value.Default(VoiceConfigSchema, api.pluginConfig ?? {}) as VoiceConfig;
+    const groqApiKey =
+      baseConfig.groqApiKey ||
+      (api.config as any)?.gateway?.models?.providers?.groq?.apiKey ||
+      "";
+    const config: VoiceConfig = { ...baseConfig, groqApiKey };
     const validation = validateConfig(config);
     if (!validation.valid) {
       api.logger.warn(`[discord-voice] Config issues: ${validation.errors.join("; ")}`);
@@ -55,9 +60,13 @@ const plugin = {
       }
 
       if (!runtimePromise) {
+        const messageRouter =
+          api.runtime?.message?.handleVoiceMessage ?? api.runtime?.message?.handleMessage;
+
         runtimePromise = createVoiceRuntime({
           config,
           discordClient: api.runtime?.channel?.discord?.client ?? null,
+          messageRouter,
           logger: api.logger,
         });
       }

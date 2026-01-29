@@ -8,6 +8,7 @@ import { EnergyVAD } from "./vad.js";
 import { STTService } from "./stt/index.js";
 import { GroqSTT } from "./stt/groq.js";
 import { WhisperCppSTT } from "./stt/whisper-cpp.js";
+import { resampleToWav16kMono } from "./stt/resample.js";
 
 export type LoggerLike = {
   info?: (message: string) => void;
@@ -21,6 +22,17 @@ export type VoiceRuntime = {
   speak: (guildId: string, text: string) => Promise<void>;
   status: () => { connectedGuilds: string[] };
 };
+
+type VoiceMessage = {
+  guildId: string;
+  channelId: string;
+  userId: string;
+  username: string;
+  text: string;
+  history: Array<{ role: "user" | "assistant"; content: string }>;
+};
+
+type VoiceMessageRouter = (message: VoiceMessage) => Promise<string | null>;
 
 type DiscordClientLike = {
   channels: {
@@ -49,9 +61,10 @@ function assertVoiceChannel(channel: any): void {
 export async function createVoiceRuntime(options: {
   config: VoiceConfig;
   discordClient: DiscordClientLike | null | undefined;
+  messageRouter?: VoiceMessageRouter;
   logger?: LoggerLike;
 }): Promise<VoiceRuntime> {
-  const { config, discordClient, logger } = options;
+  const { config, discordClient, logger, messageRouter } = options;
 
   if (!discordClient) {
     throw new Error("Discord client not available. Ensure the discord extension is enabled.");
@@ -61,6 +74,15 @@ export async function createVoiceRuntime(options: {
   const tts = new PiperTTS(config.piperPath, config.piperModelPath);
   const player = new VoicePlayer(config.ffmpegPath);
   const receivers = new Map<string, AudioReceiver>();
+  const sessions = new Map<
+    string,
+    {
+      guildId: string;
+      channelId: string;
+      history: Array<{ role: "user" | "assistant"; content: string }>;
+      queue: Promise<void>;
+    }
+  >();
 
   const stt = new STTService([
     new GroqSTT({ apiKey: config.groqApiKey, endpoint: config.groqApiEndpoint }),
@@ -86,6 +108,15 @@ export async function createVoiceRuntime(options: {
 
       logInfo(`[discord-voice] Joined voice channel ${channelId} in guild ${guildId}`);
 
+      if (!sessions.has(guildId)) {
+        sessions.set(guildId, {
+          guildId,
+          channelId,
+          history: [] as Array<{ role: "user" | "assistant"; content: string }>,
+          queue: Promise.resolve(),
+        });
+      }
+
       if (config.sttEnabled) {
         const connection = voiceManager.get(guildId);
         if (connection) {
@@ -95,13 +126,47 @@ export async function createVoiceRuntime(options: {
             discordClient,
             logger,
             onUtterance: async ({ userId, username, pcm }) => {
-              try {
-                const text = await stt.transcribe(pcm);
-                if (!text.trim()) return;
-                logInfo(`[discord-voice] ${username} (${userId}): ${text}`);
-              } catch (err) {
-                logger?.warn?.(`[discord-voice] STT failed: ${String(err)}`);
-              }
+              const session = sessions.get(guildId);
+              if (!session) return;
+
+              session.queue = session.queue.then(async () => {
+                try {
+                  const wav = await resampleToWav16kMono(pcm, config.ffmpegPath);
+                  const text = await stt.transcribe(wav);
+                  if (!text.trim()) return;
+
+                  logInfo(`[discord-voice] ${username} (${userId}): ${text}`);
+
+                  const history: Array<{ role: "user" | "assistant"; content: string }> =
+                    session.history.slice(-20);
+                  history.push({ role: "user", content: text });
+                  session.history = history;
+
+                  if (!messageRouter) {
+                    logger?.warn?.("[discord-voice] No message router configured; skipping response");
+                    return;
+                  }
+
+                  const response = await messageRouter({
+                    guildId,
+                    channelId,
+                    userId,
+                    username,
+                    text,
+                    history: session.history,
+                  });
+
+                  if (!response || !response.trim()) return;
+                  const updatedHistory: Array<{ role: "user" | "assistant"; content: string }> = [
+                    ...session.history,
+                    { role: "assistant", content: response },
+                  ];
+                  session.history = updatedHistory.slice(-20);
+                  await player.play(await tts.synthesize(response), connection);
+                } catch (err) {
+                  logger?.warn?.(`[discord-voice] STT/response failed: ${String(err)}`);
+                }
+              });
             },
           });
           receiver.start();
@@ -116,6 +181,7 @@ export async function createVoiceRuntime(options: {
         receiver.stop();
         receivers.delete(guildId);
       }
+      sessions.delete(guildId);
       await voiceManager.leave(guildId);
       logInfo(`[discord-voice] Left voice channel in guild ${guildId}`);
     },
