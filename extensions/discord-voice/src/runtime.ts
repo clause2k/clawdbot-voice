@@ -55,16 +55,20 @@ export async function createVoiceRuntime(options: {
   config: VoiceConfig;
   discordClient: DiscordClientLike | null | undefined;
   coreConfig?: CoreConfig;
+  ttsRuntime?: { synthesize: (text: string) => Promise<Buffer> } | null;
   logger?: LoggerLike;
 }): Promise<VoiceRuntime> {
-  const { config, discordClient, logger, coreConfig } = options;
+  const { config, discordClient, logger, coreConfig, ttsRuntime } = options;
 
   if (!discordClient) {
     throw new Error("Discord client not available. Ensure the discord extension is enabled.");
   }
 
   const voiceManager = new VoiceManager();
-  const tts = new PiperTTS(config.piperPath, config.piperModelPath);
+  const tts =
+    config.piperPath && config.piperModelPath
+      ? new PiperTTS(config.piperPath, config.piperModelPath)
+      : null;
   const player = new VoicePlayer(config.ffmpegPath);
   const receivers = new Map<string, AudioReceiver>();
   const sessions = new Map<
@@ -164,7 +168,18 @@ export async function createVoiceRuntime(options: {
                     { role: "assistant", content: response },
                   ];
                   session.history = updatedHistory.slice(-20);
-                  await player.play(await tts.synthesize(response), connection);
+                  const audioBuffer = tts
+                    ? await tts.synthesize(response)
+                    : ttsRuntime
+                      ? await ttsRuntime.synthesize(response)
+                      : null;
+
+                  if (!audioBuffer) {
+                    logger?.warn?.("[discord-voice] No TTS runtime available; skipping playback");
+                    return;
+                  }
+
+                  await player.play(audioBuffer, connection);
                 } catch (err) {
                   logger?.warn?.(`[discord-voice] STT/response failed: ${String(err)}`);
                 }
@@ -199,8 +214,18 @@ export async function createVoiceRuntime(options: {
         return;
       }
 
-      const pcm = await tts.synthesize(text);
-      await player.play(pcm, connection);
+      const audioBuffer = tts
+        ? await tts.synthesize(text)
+        : ttsRuntime
+          ? await ttsRuntime.synthesize(text)
+          : null;
+
+      if (!audioBuffer) {
+        logger?.warn?.("[discord-voice] No TTS runtime available; skipping playback");
+        return;
+      }
+
+      await player.play(audioBuffer, connection);
     },
 
     status() {

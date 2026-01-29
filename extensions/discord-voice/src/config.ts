@@ -3,12 +3,12 @@ import { Type, type Static } from "@sinclair/typebox";
 export const VoiceConfigSchema = Type.Object({
   enabled: Type.Boolean({ default: true }),
   piperPath: Type.String({
-    default: "/home/nuc/clawd/tools/piper/piper",
-    description: "Path to Piper binary",
+    default: "",
+    description: "Path to Piper binary (optional)",
   }),
   piperModelPath: Type.String({
-    default: "/home/nuc/clawd/tools/piper/voices/en_US-lessac-medium.onnx",
-    description: "Path to Piper model",
+    default: "",
+    description: "Path to Piper model (optional)",
   }),
   ffmpegPath: Type.String({
     default: "ffmpeg",

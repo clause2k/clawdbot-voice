@@ -67,6 +67,7 @@ const plugin = {
           config,
           discordClient: api.runtime?.channel?.discord?.client ?? null,
           coreConfig: api.config as any,
+          ttsRuntime: api.runtime?.tts ?? null,
           logger: api.logger,
         });
       }
