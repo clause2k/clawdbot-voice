@@ -11,6 +11,7 @@ import { WhisperCppSTT } from "./stt/whisper-cpp.js";
 import { resampleToWav16kMono } from "./stt/resample.js";
 import { generateVoiceResponse } from "./response-generator.js";
 import type { CoreConfig } from "./core-bridge.js";
+import { Client, GatewayIntentBits } from "discord.js";
 
 export type LoggerLike = {
   info?: (message: string) => void;
@@ -34,6 +35,7 @@ type DiscordClientLike = {
   users: {
     fetch: (id: string) => Promise<any>;
   };
+  login?: (token: string) => Promise<string>;
 };
 
 function resolveAdapterCreator(channel: any): unknown {
@@ -60,8 +62,17 @@ export async function createVoiceRuntime(options: {
 }): Promise<VoiceRuntime> {
   const { config, discordClient, logger, coreConfig, ttsRuntime } = options;
 
-  if (!discordClient) {
-    throw new Error("Discord client not available. Ensure the discord extension is enabled.");
+  let client: DiscordClientLike | null = discordClient ?? null;
+  const token = coreConfig?.channels?.discord?.token;
+  if (!client && token) {
+    const newClient = new Client({
+      intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
+    });
+    await newClient.login(token);
+    client = newClient;
+  }
+  if (!client) {
+    throw new Error("No Discord client available; check channels.discord.token.");
   }
 
   const voiceManager = new VoiceManager();
@@ -91,7 +102,7 @@ export async function createVoiceRuntime(options: {
 
   return {
     async join(guildId: string, channelId: string) {
-      const channel = await discordClient.channels.fetch(channelId);
+      const channel = await client.channels.fetch(channelId);
       assertVoiceChannel(channel);
 
       const adapterCreator = resolveAdapterCreator(channel);
@@ -120,7 +131,7 @@ export async function createVoiceRuntime(options: {
           const receiver = new AudioReceiver({
             connection,
             vad: new EnergyVAD({ energyThreshold: config.vadEnergyThreshold }),
-            discordClient,
+            discordClient: client,
             logger,
             onUtterance: async ({ userId, username, pcm }) => {
               const session = sessions.get(guildId);

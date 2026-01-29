@@ -6,6 +6,11 @@ export type CoreConfig = {
   session?: {
     store?: string;
   };
+  channels?: {
+    discord?: {
+      token?: string;
+    };
+  };
   [key: string]: unknown;
 };
 
