@@ -3,6 +3,11 @@ import { VoiceManager } from "./voice-manager.js";
 import { PiperTTS } from "./tts-service.js";
 import { VoicePlayer } from "./audio-player.js";
 import type { VoiceConfig } from "./config.js";
+import { AudioReceiver } from "./audio-receiver.js";
+import { EnergyVAD } from "./vad.js";
+import { STTService } from "./stt/index.js";
+import { GroqSTT } from "./stt/groq.js";
+import { WhisperCppSTT } from "./stt/whisper-cpp.js";
 
 export type LoggerLike = {
   info?: (message: string) => void;
@@ -19,6 +24,9 @@ export type VoiceRuntime = {
 
 type DiscordClientLike = {
   channels: {
+    fetch: (id: string) => Promise<any>;
+  };
+  users: {
     fetch: (id: string) => Promise<any>;
   };
 };
@@ -52,6 +60,12 @@ export async function createVoiceRuntime(options: {
   const voiceManager = new VoiceManager();
   const tts = new PiperTTS(config.piperPath, config.piperModelPath);
   const player = new VoicePlayer(config.ffmpegPath);
+  const receivers = new Map<string, AudioReceiver>();
+
+  const stt = new STTService([
+    new GroqSTT({ apiKey: config.groqApiKey, endpoint: config.groqApiEndpoint }),
+    new WhisperCppSTT(config.whisperCppPath, config.whisperCppModelPath),
+  ]);
 
   const logInfo = logger?.info ?? (() => undefined);
   const logWarn = logger?.warn ?? (() => undefined);
@@ -71,9 +85,37 @@ export async function createVoiceRuntime(options: {
       });
 
       logInfo(`[discord-voice] Joined voice channel ${channelId} in guild ${guildId}`);
+
+      if (config.sttEnabled) {
+        const connection = voiceManager.get(guildId);
+        if (connection) {
+          const receiver = new AudioReceiver({
+            connection,
+            vad: new EnergyVAD({ energyThreshold: config.vadEnergyThreshold }),
+            discordClient,
+            logger,
+            onUtterance: async ({ userId, username, pcm }) => {
+              try {
+                const text = await stt.transcribe(pcm);
+                if (!text.trim()) return;
+                logInfo(`[discord-voice] ${username} (${userId}): ${text}`);
+              } catch (err) {
+                logger?.warn?.(`[discord-voice] STT failed: ${String(err)}`);
+              }
+            },
+          });
+          receiver.start();
+          receivers.set(guildId, receiver);
+        }
+      }
     },
 
     async leave(guildId: string) {
+      const receiver = receivers.get(guildId);
+      if (receiver) {
+        receiver.stop();
+        receivers.delete(guildId);
+      }
       await voiceManager.leave(guildId);
       logInfo(`[discord-voice] Left voice channel in guild ${guildId}`);
     },

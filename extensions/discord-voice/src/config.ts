@@ -22,6 +22,30 @@ export const VoiceConfigSchema = Type.Object({
     default: false,
     description: "Whether the bot should mute itself after joining",
   }),
+  sttEnabled: Type.Boolean({
+    default: true,
+    description: "Enable speech-to-text capture in voice channels",
+  }),
+  groqApiKey: Type.String({
+    default: "",
+    description: "Groq API key for Whisper transcription",
+  }),
+  groqApiEndpoint: Type.String({
+    default: "https://api.groq.com/openai/v1/audio/transcriptions",
+    description: "Groq Whisper API endpoint",
+  }),
+  whisperCppPath: Type.String({
+    default: "",
+    description: "Path to whisper.cpp binary",
+  }),
+  whisperCppModelPath: Type.String({
+    default: "",
+    description: "Path to whisper.cpp model",
+  }),
+  vadEnergyThreshold: Type.Number({
+    default: 0.01,
+    description: "Energy threshold for simple VAD",
+  }),
 });
 
 export type VoiceConfig = Static<typeof VoiceConfigSchema>;

@@ -32,6 +32,12 @@ const plugin = {
       piperPath: { label: "Piper Path", help: "Path to Piper binary" },
       piperModelPath: { label: "Piper Model", help: "Path to Piper model" },
       ffmpegPath: { label: "FFmpeg Path", help: "Path to ffmpeg binary" },
+      sttEnabled: { label: "Enable STT", help: "Enable speech-to-text capture" },
+      groqApiKey: { label: "Groq API Key", help: "Groq Whisper API key" },
+      groqApiEndpoint: { label: "Groq API Endpoint", help: "Groq Whisper endpoint" },
+      whisperCppPath: { label: "whisper.cpp Path", help: "Path to whisper.cpp binary" },
+      whisperCppModelPath: { label: "whisper.cpp Model", help: "Path to whisper.cpp model" },
+      vadEnergyThreshold: { label: "VAD Threshold", help: "Energy threshold for VAD" },
     },
   },
   register(api: ClawdbotPluginApi) {
