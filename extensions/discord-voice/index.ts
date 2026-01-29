@@ -38,6 +38,9 @@ const plugin = {
       whisperCppPath: { label: "whisper.cpp Path", help: "Path to whisper.cpp binary" },
       whisperCppModelPath: { label: "whisper.cpp Model", help: "Path to whisper.cpp model" },
       vadEnergyThreshold: { label: "VAD Threshold", help: "Energy threshold for VAD" },
+      responseModel: { label: "Response Model", help: "Provider/model override" },
+      responseSystemPrompt: { label: "Response Prompt", help: "System prompt override" },
+      responseTimeoutMs: { label: "Response Timeout", help: "Timeout override (ms)" },
     },
   },
   register(api: ClawdbotPluginApi) {
@@ -60,13 +63,10 @@ const plugin = {
       }
 
       if (!runtimePromise) {
-        const messageRouter =
-          api.runtime?.message?.handleVoiceMessage ?? api.runtime?.message?.handleMessage;
-
         runtimePromise = createVoiceRuntime({
           config,
           discordClient: api.runtime?.channel?.discord?.client ?? null,
-          messageRouter,
+          coreConfig: api.config as any,
           logger: api.logger,
         });
       }

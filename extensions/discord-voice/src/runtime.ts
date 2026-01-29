@@ -9,6 +9,8 @@ import { STTService } from "./stt/index.js";
 import { GroqSTT } from "./stt/groq.js";
 import { WhisperCppSTT } from "./stt/whisper-cpp.js";
 import { resampleToWav16kMono } from "./stt/resample.js";
+import { generateVoiceResponse } from "./response-generator.js";
+import type { CoreConfig } from "./core-bridge.js";
 
 export type LoggerLike = {
   info?: (message: string) => void;
@@ -23,16 +25,7 @@ export type VoiceRuntime = {
   status: () => { connectedGuilds: string[] };
 };
 
-type VoiceMessage = {
-  guildId: string;
-  channelId: string;
-  userId: string;
-  username: string;
-  text: string;
-  history: Array<{ role: "user" | "assistant"; content: string }>;
-};
 
-type VoiceMessageRouter = (message: VoiceMessage) => Promise<string | null>;
 
 type DiscordClientLike = {
   channels: {
@@ -61,10 +54,10 @@ function assertVoiceChannel(channel: any): void {
 export async function createVoiceRuntime(options: {
   config: VoiceConfig;
   discordClient: DiscordClientLike | null | undefined;
-  messageRouter?: VoiceMessageRouter;
+  coreConfig?: CoreConfig;
   logger?: LoggerLike;
 }): Promise<VoiceRuntime> {
-  const { config, discordClient, logger, messageRouter } = options;
+  const { config, discordClient, logger, coreConfig } = options;
 
   if (!discordClient) {
     throw new Error("Discord client not available. Ensure the discord extension is enabled.");
@@ -142,19 +135,28 @@ export async function createVoiceRuntime(options: {
                   history.push({ role: "user", content: text });
                   session.history = history;
 
-                  if (!messageRouter) {
-                    logger?.warn?.("[discord-voice] No message router configured; skipping response");
+                  if (!coreConfig) {
+                    logger?.warn?.("[discord-voice] Core config unavailable; skipping response");
                     return;
                   }
 
-                  const response = await messageRouter({
+                  const transcript: Array<{ speaker: "user" | "bot"; text: string }> =
+                    session.history.map((entry) => ({
+                      speaker: entry.role === "assistant" ? "bot" : "user",
+                      text: entry.content,
+                    }));
+
+                  const responseResult = await generateVoiceResponse({
+                    voiceConfig: config,
+                    coreConfig,
                     guildId,
                     channelId,
                     userId,
-                    username,
-                    text,
-                    history: session.history,
+                    transcript,
+                    userMessage: text,
                   });
+
+                  const response = responseResult.text;
 
                   if (!response || !response.trim()) return;
                   const updatedHistory: Array<{ role: "user" | "assistant"; content: string }> = [

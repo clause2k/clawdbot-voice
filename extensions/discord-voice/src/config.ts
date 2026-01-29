@@ -46,6 +46,18 @@ export const VoiceConfigSchema = Type.Object({
     default: 0.01,
     description: "Energy threshold for simple VAD",
   }),
+  responseModel: Type.String({
+    default: "",
+    description: "Provider/model override for voice responses",
+  }),
+  responseSystemPrompt: Type.String({
+    default: "",
+    description: "System prompt override for voice responses",
+  }),
+  responseTimeoutMs: Type.Number({
+    default: 0,
+    description: "Timeout override for voice response generation",
+  }),
 });
 
 export type VoiceConfig = Static<typeof VoiceConfigSchema>;
